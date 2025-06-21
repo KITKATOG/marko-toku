@@ -22,7 +22,7 @@ GITHUB_TOKEN = "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"
 MAIN_TOKEN = "MTIxMDQwMjYwODA3MDc5MTIzMA.GEtAXD.nLsEWxm9IKsmFyiJY3Nlso-zO7F84oZNsRrCxQ"
 BOT_TOKEN = "MTMzNzQzMjcyMzk0MTM2MzgwNg.G5xdmo.9b5AIimcJBzl0hnzUpi7ZGCCV2JzDhZ4gXssbw"
 WEBHOOK_URL = "https://discord.com/api/webhooks/1353147680448184421/agHFeGcaxZFlh-qeXtd8m_hytFN4uUuEdu8bjSF3CH43n5JDRLczfnsc7Y8xbKWOUo6k"
-GITHUB_REPO_URL = "https://github.com/ANASBA666/marko-toku/blob/main/mako.txt"
+GITHUB_REPO_URL = "https://raw.githubusercontent.com/ANASBA666/marko-toku/refs/heads/main/mako.txt?token=GHSAT0AAAAAADFOPWB3SQOFQCPZYOM4P5NC2CW4LVA"
 MONITOR_TOKENS = []
 REDEEM_API = "https://discord.com/api/v10/entitlements/gift-codes/{}/redeem"
 GIFT_LINK_PATTERN = re.compile(r"(?:https?:\/\/)?discord\.gift\/([a-zA-Z0-9]{16,24})")
@@ -32,7 +32,7 @@ SELF_BOTS = []
 intents = discord.Intents.default()
 intents.messages = True
 intents.message_content = True
-bot = commands.Bot(command_prefix="/", intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Headers
 redeem_headers = {
