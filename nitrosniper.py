@@ -8,30 +8,25 @@ from fastapi import FastAPI
 import uvicorn
 import threading
 
-# === FastAPI setup ===
+# Initialize FastAPI
 app = FastAPI()
 
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
 
-# === Global config ===
+# Config
 GITHUB_TOKEN = "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"
-MAIN_TOKEN = "MTIxMDQwMjYwODA3MDc5MTIzMA.GEtAXD.nLsEWxm9IKsmFyiJY3Nlso-zO7F84oZNsRrCxQ"
+MAIN_TOKEN = "MTIxMDQwMjYwODA3MDc5MTIzMA.GEtAXD.nLsEWxm9IKsmFyiJY3Nlso-zO7F84oZNsRrCxQ"  # ONLY THIS will be used to redeem
 BOT_TOKEN = "MTMzNzQzMjcyMzk0MTM2MzgwNg.G5xdmo.9b5AIimcJBzl0hnzUpi7ZGCCV2JzDhZ4gXssbw"
 WEBHOOK_URL = "https://discord.com/api/webhooks/1353147680448184421/agHFeGcaxZFlh-qeXtd8m_hytFN4uUuEdu8bjSF3CH43n5JDRLczfnsc7Y8xbKWOUo6k"
-GITHUB_REPO_URL = "https://raw.githubusercontent.com/ANASBA666/marko-toku/refs/heads/main/mako.txt?token=GHSAT0AAAAAADFOPWB3SQOFQCPZYOM4P5NC2CW4LVA"
-
+GITHUB_REPO_URL = "https://raw.githubusercontent.com/ANASBA666/marko-toku/refs/heads/main/mako.txt?token=GHSAT0AAAAAADFOPWB2WD25BWTLG4ALPB742CW47UQ"
 REDEEM_API = "https://discord.com/api/v10/entitlements/gift-codes/{}/redeem"
 GIFT_LINK_PATTERN = re.compile(r"(?:https?:\\/\\/)?discord\\.gift\\/([a-zA-Z0-9]{16,24})")
-
 MONITOR_TOKENS = []
-SELF_BOTS = []
-shared_session = None
-bot_started = False
 
+# Discord Bot Init
 intents = discord.Intents.default()
-intents.messages = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -41,157 +36,97 @@ redeem_headers = {
     "User-Agent": "DiscordBot (https://example.com, 1.0)"
 }
 
-@tasks.loop(minutes=1)
+# Fetch and validate tokens only
+@tasks.loop(minutes=2)
 async def update_monitor_tokens():
-    global MONITOR_TOKENS, SELF_BOTS
+    global MONITOR_TOKENS
     headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"}
     try:
-        async with shared_session.get(GITHUB_REPO_URL, headers=headers, timeout=5) as response:
-            if response.status == 429:
-                await asyncio.sleep(int(response.headers.get("Retry-After", 1)))
-            response.raise_for_status()
-            new_tokens = [t.strip() for t in (await response.text()).splitlines() if t.strip()]
-            valid_tokens = []
-            invalid_tokens = []
-            for token in new_tokens:
-                if await is_valid_token(token):
-                    valid_tokens.append(token)
-                else:
-                    invalid_tokens.append(token)
-
-            old_tokens = set(MONITOR_TOKENS)
-            MONITOR_TOKENS = valid_tokens
-            removed_tokens = old_tokens - set(valid_tokens)
-
-            if removed_tokens or invalid_tokens:
-                await send_webhook(f"Removed/Invalid tokens: {', '.join(removed_tokens.union(invalid_tokens))}")
-
-            new_tokens_set = set(valid_tokens) - old_tokens
-            for token in new_tokens_set:
-                await start_self_bot(token)
-
-            for client in SELF_BOTS[:]:
-                if client.token in removed_tokens:
-                    await client.close()
-                    SELF_BOTS.remove(client)
-
-            print(f"Updated tokens: {len(MONITOR_TOKENS)} active")
-            if MONITOR_TOKENS:
-                await send_webhook(f"Monitoring {len(MONITOR_TOKENS)} accounts")
+        async with aiohttp.ClientSession() as session:
+            async with session.get(GITHUB_REPO_URL, headers=headers) as res:
+                tokens = [t.strip() for t in (await res.text()).splitlines() if t.strip()]
+        valid = []
+        for token in tokens:
+            if await is_valid_token(token):
+                valid.append(token)
+            else:
+                await send_webhook(f"❌ Invalid token removed: `{token[:10]}...`")
+        MONITOR_TOKENS = valid
+        await send_webhook(f"✅ Monitoring {len(valid)} valid accounts")
     except Exception as e:
-        print(f"GitHub fetch error: {e}")
-        await send_webhook("Failed to fetch tokens.")
+        await send_webhook(f"⚠️ Error updating monitor tokens: {e}")
 
+# Only validate tokens, don't use them
 async def is_valid_token(token):
-    headers = {"Authorization": token}
     try:
-        async with shared_session.get("https://discord.com/api/v10/users/@me", headers=headers, timeout=5) as response:
-            return response.status == 200
+        async with aiohttp.ClientSession() as s:
+            async with s.get("https://discord.com/api/v10/users/@me", headers={"Authorization": token}) as r:
+                return r.status == 200
     except:
         return False
 
-async def send_webhook(message, is_success=False):
-    embed = {
-        "title": "Nitro Sniper",
-        "description": message,
-        "color": 0x00FF00 if is_success else 0xFF0000,
-        "timestamp": datetime.utcnow().isoformat()
-    }
-    data = {"embeds": [embed]}
-    try:
-        async with shared_session.post(WEBHOOK_URL, json=data, timeout=5) as response:
-            response.raise_for_status()
-    except Exception as e:
-        print(f"Webhook error: {e}")
+# Listen to messages for Nitro links
+@bot.event
+async def on_message(msg):
+    if msg.author.bot:
+        return
+    match = GIFT_LINK_PATTERN.search(msg.content)
+    if match:
+        code = match.group(1)
+        await send_webhook(f"🎁 Found Nitro code: `{code}` from {msg.author}")
+        await redeem_gift(code)
 
+# Redeem using MAIN_TOKEN only
 async def redeem_gift(code):
     url = REDEEM_API.format(code)
     try:
-        async with shared_session.post(url, headers=redeem_headers, json={}, timeout=5) as response:
-            if response.status == 200:
-                await send_webhook(f"Redeemed code: {code}", is_success=True)
-                return True
-            else:
-                error = await response.json()
-                await send_webhook(f"Failed code {code}: {error.get('message', 'Unknown')}")
-                return False
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=redeem_headers, json={}) as r:
+                data = await r.json()
+                if r.status == 200:
+                    await send_webhook(f"✅ Claimed Nitro: `{code}`")
+                else:
+                    await send_webhook(f"❌ Failed to redeem `{code}`: {data.get('message', 'Unknown')}")
     except Exception as e:
-        await send_webhook(f"Error redeeming {code}: {str(e)}")
-        return False
+        await send_webhook(f"⚠️ Error redeeming `{code}`: {str(e)}")
 
-async def start_self_bot(token):
-    client = discord.Client(intents=intents)
-    client.token = token
-
-    @client.event
-    async def on_ready():
-        print(f"Self-bot logged in as {client.user}")
-
-    @client.event
-    async def on_message(message):
-        try:
-            match = GIFT_LINK_PATTERN.search(message.content)
-            if match:
-                code = match.group(1)
-                print(f"Detected link: {code} from {message.author}")
-                await redeem_gift(code)
-        except Exception as e:
-            print(f"Error in on_message: {e}")
-
-    for attempt in range(3):
-        try:
-            SELF_BOTS.append(client)
-            await client.start(token)
-            return
-        except Exception as e:
-            print(f"Self-bot error (attempt {attempt+1}): {e}")
-            await asyncio.sleep(2)
-    if client in SELF_BOTS:
-        SELF_BOTS.remove(client)
+# Webhook notifier
+async def send_webhook(msg, color=0xFF0000):
+    embed = {
+        "title": "Nitro Sniper",
+        "description": msg,
+        "color": color,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+    try:
+        async with aiohttp.ClientSession() as s:
+            await s.post(WEBHOOK_URL, json={"embeds": [embed]})
+    except:
+        pass
 
 @bot.command()
 async def stats(ctx):
     latency = round(bot.latency * 1000, 2)
-    embed = discord.Embed(
-        title="Nitro Sniper Stats",
-        description="Monitoring status",
-        color=0x5865F2,
-        timestamp=datetime.utcnow()
-    )
-    embed.add_field(name="Active Tokens", value=str(len(MONITOR_TOKENS)) or "None", inline=False)
-    embed.add_field(name="Latency", value=f"{latency} ms", inline=True)
-    embed.add_field(
-        name="Accounts",
-        value="\n".join([t[:10] + "..." for t in MONITOR_TOKENS[:5]]) + ("..." if len(MONITOR_TOKENS) > 5 else "") or "None",
-        inline=False
-    )
-    embed.set_footer(text="Developed by ANASBA666")
+    embed = discord.Embed(title="Nitro Sniper Stats", color=0x00ffcc, timestamp=datetime.utcnow())
+    embed.add_field(name="Monitored Accounts", value=len(MONITOR_TOKENS))
+    embed.add_field(name="Latency", value=f"{latency}ms")
+    embed.set_footer(text="Made by ANAS")
     await ctx.send(embed=embed)
 
 @bot.event
 async def on_ready():
-    global bot_started
     print(f"Bot logged in as {bot.user}")
     if not update_monitor_tokens.is_running():
         update_monitor_tokens.start()
-        if not bot_started:
-            await send_webhook("Nitro Sniper started", is_success=True)
-            bot_started = True
+    await send_webhook("✅ Nitro Sniper bot started.", color=0x00FF00)
 
+# Start bot
 async def main():
-    global shared_session
-    shared_session = aiohttp.ClientSession()
     try:
         await bot.start(BOT_TOKEN)
-    finally:
-        await shared_session.close()
-        for client in SELF_BOTS:
-            await client.close()
+    except Exception as e:
+        print("Startup error:", e)
 
-def run_server():
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
-if __name__ == "__main__":
-    server_thread = threading.Thread(target=run_server, daemon=True)
-    server_thread.start()
-    asyncio.run(main())
+# Run FastAPI in thread
+threading.Thread(target=lambda: uvicorn.run(app, host="0.0.0.0", port=8000), daemon=True).start()
+asyncio.run(main())
