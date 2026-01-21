@@ -1,7 +1,0 @@
-services:
-  - type: web
-    name: nitro-sniper
-    env: docker
-    plan: free
-    region: oregon
-    dockerfilePath: ./Dockerfile
