@@ -1,0 +1,1 @@
+1.0.5|Fixed overlay injection bug, improved download stability with retry logic, added auto-update system
