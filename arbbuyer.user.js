@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Arbpay Sniper v5.0
 // @namespace    http://tampermonkey.net/
-// @version      5.0.1
+// @version      5.0.2
 // @description  Neo-brutalist GUI
 // @author       Anas
 // @match        https://arbpay.me/*
