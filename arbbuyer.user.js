@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Arbpay Sniper v5.0 [BRUTAL]
+// @name         Arbpay Sniper v5.0
 // @namespace    http://tampermonkey.net/
 // @version      5.0.0
-// @description  Neo-brutalist GUI, zero spam, triple-fire click + Discord webhook alerts
+// @description  Neo-brutalist GUI
 // @author       Anas
 // @match        https://arbpay.me/*
 // @grant        GM_xmlhttpRequest
