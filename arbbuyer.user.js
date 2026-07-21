@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Arbpay Sniper v5.0
 // @namespace    http://tampermonkey.net/
-// @version      5.2.0
+// @version      5.2.1
 // @description  Auto buyer
 // @author       Xolo
 // @match        https://arbpay.me/*
